@@ -1,4 +1,7 @@
+# syntax=docker/dockerfile:1
 FROM docker-remotes.artifactory.prod.aws.cloud.ihf/amazonlinux:2023
+
+# Proxies (passe via --build-arg no build)
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
@@ -11,28 +14,27 @@ ENV TZ=America/Sao_Paulo \
     https_proxy=${HTTPS_PROXY} \
     no_proxy=${NO_PROXY}
 
-# CA corporativo antes de qualquer acesso à rede
+# 1) CA corporativo antes de qualquer dnf/yum
 COPY ca_bundle.crt /etc/pki/ca-trust/source/anchors/company-root.crt
-RUN yum -y install ca-certificates && update-ca-trust
+RUN dnf -y install ca-certificates && update-ca-trust
 
-# dnf.conf: CA + (se tiver) proxy
+# 2) dnf.conf: liga verificação de SSL e configura proxy (se fornecida)
 RUN printf "\nsslverify=1\n" >> /etc/dnf/dnf.conf \
  && if [ -n "${HTTPS_PROXY}${HTTP_PROXY}" ]; then \
-        PROXY="${HTTPS_PROXY:-$HTTP_PROXY}"; \
-        printf "proxy=%s\n" "$PROXY" >> /etc/dnf/dnf.conf; \
+      PROXY="${HTTPS_PROXY:-$HTTP_PROXY}"; \
+      printf "proxy=%s\n" "$PROXY" >> /etc/dnf/dnf.conf; \
     fi
 
-# (opcional) desabilite NodeSource se não usa
-RUN yum -y install yum-utils && (yum-config-manager --disable nodesource* || true) \
- && rm -f /etc/yum.repos.d/nodesource*.repo || true
+# 3) Pacotes necessários (sem kernel, sem nodesource)
+RUN dnf -y install \
+      python3.11 python3-pip \
+      gcc gcc-c++ make \
+      openssl-devel findutils tzdata \
+ && dnf clean all && rm -rf /var/cache/dnf
 
-# pacotes necessários (sem mexer em kernel)
-RUN yum -y install python3.11 python3-pip gcc gcc-c++ make openssl-devel findutils tzdata \
- && yum clean all && rm -rf /var/cache/yum
-
-# Faça as ferramentas respeitarem o bundle de CA
+# 4) Ferramentas usam o mesmo bundle de CA
 ENV SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
-    REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
+    REQUESTS_CA_BUNDLE=/etc/pki/ca-trrust/extracted/pem/tls-ca-bundle.pem \
     CURL_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 
 WORKDIR /src
