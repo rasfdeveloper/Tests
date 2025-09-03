@@ -45,3 +45,9 @@ RUN python3.11 -m pip install --upgrade pip \
 COPY . .
 EXPOSE 8082
 CMD ["gunicorn","-b","0.0.0.0:8082","run:app"]
+
+
+# substitua URL_DO_MIRROR
+RUN printf "[amzn2023-internal]\nname=AL2023 internal\nbaseurl=https://URL_DO_MIRROR/amzn2023/\nenabled=1\ngpgcheck=0\n" \
+    > /etc/yum.repos.d/amzn2023-internal.repo \
+ && dnf config-manager --disable amzn2023-core amzn2023-extras || true
