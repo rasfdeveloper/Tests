@@ -1,51 +1,6 @@
-# syntax=docker/dockerfile:1
-FROM itau-fa2-docker.artifactory.prod.aws.cloud.ihf/docker/python:3.11.3
-
-# --- Proxy (passe via --build-arg) ---
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY
-ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} NO_PROXY=${NO_PROXY} \
-    http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY} no_proxy=${NO_PROXY} \
-    TZ=America/Sao_Paulo \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-
-USER root
-
-# --- CA corporativo (Alpine) ---
-# Coloque o seu certificado raiz no mesmo diretório do Dockerfile com nome company-root.crt
-COPY company-root.crt /usr/local/share/ca-certificates/company-root.crt
-RUN apk add --no-cache ca-certificates && update-ca-certificates
-
-# --- Repositórios do Alpine ---
-# Se sua empresa tiver ESPELHO INTERNO (Artifactory/Nexus), SUBSTITUA as URLs abaixo por ele.
-# Dê preferência a versão suportada do Alpine do seu base image (3.18/3.19/3.20). Aqui uso 3.18 como exemplo.
-RUN printf "https://dl-cdn.alpinelinux.org/alpine/v3.18/main\nhttps://dl-cdn.alpinelinux.org/alpine/v3.18/community\n" > /etc/apk/repositories
-
-# Teste de conectividade (vai respeitar http_proxy/https_proxy)
-RUN apk update && apk upgrade
-
-# Dependências (ajuste se precisar compilar wheels nativos)
-RUN apk add --no-cache tzdata \
-    && apk add --no-cache --virtual .build-deps build-base linux-headers libffi-dev openssl-dev \
-    || true
-
-WORKDIR /src
-
-# Pip usa o CA do sistema automaticamente; se precisar, exporte:
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
-    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-
-COPY requirements.txt .
-RUN python -m pip install --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Remove toolchain se não precisar mais compilar em runtime
-RUN apk del .build-deps || true
-
-EXPOSE 8082
-# Não use ENTRYPOINT ["python3"] (iria rodar "python3 gunicorn ...")
-CMD ["gunicorn","-b","0.0.0.0:8082","run:app"]
+ENTRYPOINT ["gunicorn", "run:app",
+            "--bind", "0.0.0.0:8080",
+            "--timeout", "600",
+            "--workers", "3",
+            "--threads", "3",
+            "--worker-class", "gevent"]
